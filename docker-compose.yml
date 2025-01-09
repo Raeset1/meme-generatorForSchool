@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  meme-backend:
+    build:
+      context: ./backend
+    container_name: meme-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./uploads:/app/uploads
+    working_dir: /app
+    restart: always
+    environment:
+      - LOGSTASH_HOST=logstash:5044
+
+  meme-frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: meme-frontend
+    ports:
+      - "8080:80"
+    restart: always
+
+  image-storage:
+    image: nginx:alpine
+    container_name: image-storage
+    ports:
+      - "8081:80"
+    volumes:
+      - ./uploads:/usr/share/nginx/html/uploads
+    restart: always
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.1
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    restart: always
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.10.1
+    container_name: logstash
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline
+    ports:
+      - "5044:5044"
+    depends_on:
+      - elasticsearch
+    restart: always
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.10.1
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    restart: always
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    restart: always
+
+volumes:
+  esdata:
+    driver: local
+  grafana-storage:
+    driver: local

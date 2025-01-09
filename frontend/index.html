@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meme Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
+        }
+        #meme-container {
+            position: relative;
+            display: inline-block;
+        }
+        #meme {
+            max-width: 500px;
+        }
+        .text-area {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 5px;
+            border: 1px solid #000;
+            cursor: move;
+            resize: both;
+            overflow: auto;
+            min-width: 50px;
+            min-height: 20px;
+        }
+        .delete-button {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: red;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 2px 5px;
+        }
+        .thumbnail {
+            max-width: 100px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        #error-message {
+            color: red;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Meme Generator</h1>
+    <input type="file" id="image-upload" accept="image/*" multiple>
+    <br><br>
+    <button onclick="uploadImages()">Upload Images</button>
+    <br><br>
+    <div id="thumbnails"></div>
+    <br><br>
+    <div>
+        <input type="text" id="text-content" placeholder="Enter text">
+        <input type="color" id="text-color" value="#000000">
+        <input type="number" id="text-size" placeholder="Font size" value="16">
+        <button onclick="addTextArea()">Add Text Area</button>
+    </div>
+    <br><br>
+    <button onclick="generateMeme()">Generate Meme</button>
+    <button onclick="downloadMeme()">Download Meme</button>
+
+    <div id="meme-container">
+        <img id="meme" src="" alt="Generated Meme" style="display: none;">
+    </div>
+    <div id="error-message"></div>
+
+    <script>
+        let uploadedImages = [];
+        let selectedImage = null;
+        let textAreaCount = 0;
+
+        function uploadImages() {
+            const files = document.getElementById('image-upload').files;
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formData.append('images', files[i]);
+            }
+
+            fetch('http://localhost:5000/upload_images', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('error-message').textContent = data.error;
+                } else {
+                    uploadedImages = data.filenames;
+                    displayThumbnails();
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        function displayThumbnails() {
+            const thumbnailsDiv = document.getElementById('thumbnails');
+            thumbnailsDiv.innerHTML = '';
+            uploadedImages.forEach(filename => {
+                const img = document.createElement('img');
+                img.src = `http://localhost:5000/images/${filename}`;
+                img.className = 'thumbnail';
+                img.onclick = () => selectImage(filename);
+                thumbnailsDiv.appendChild(img);
+            });
+        }
+
+        function selectImage(filename) {
+            selectedImage = filename;
+            const img = document.getElementById('meme');
+            img.src = `http://localhost:5000/images/${filename}`;
+            img.style.display = 'block';
+        }
+
+        function addTextArea() {
+            if (textAreaCount >= 6) {
+                alert('You can only add up to 6 text areas');
+                return;
+            }
+            const textContent = document.getElementById('text-content').value;
+            const textColor = document.getElementById('text-color').value;
+            const textSize = document.getElementById('text-size').value + 'px';
+            const memeContainer = document.getElementById('meme-container');
+            const textAreaDiv = document.createElement('div');
+            textAreaDiv.className = 'text-area';
+            textAreaDiv.style.color = textColor;
+            textAreaDiv.style.fontSize = textSize;
+            textAreaDiv.style.left = '10px';
+            textAreaDiv.style.top = '10px';
+
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'delete-button';
+            deleteButton.innerText = 'X';
+            deleteButton.onclick = function() {
+                memeContainer.removeChild(textAreaDiv);
+                textAreaCount--;
+            };
+            textAreaDiv.appendChild(deleteButton);
+
+            const textDiv = document.createElement('div');
+            textDiv.contentEditable = true;
+            textDiv.innerText = textContent;
+            textAreaDiv.appendChild(textDiv);
+
+            textAreaDiv.onmousedown = function(event) {
+                dragElement(event, textAreaDiv);
+            };
+            memeContainer.appendChild(textAreaDiv);
+            textAreaCount++;
+        }
+
+        function dragElement(event, element) {
+            event.preventDefault();
+            let shiftX = event.clientX - element.getBoundingClientRect().left;
+            let shiftY = event.clientY - element.getBoundingClientRect().top;
+
+            function moveAt(pageX, pageY) {
+                const memeContainer = document.getElementById('meme-container');
+                const containerRect = memeContainer.getBoundingClientRect();
+                const elementRect = element.getBoundingClientRect();
+
+                let newLeft = pageX - shiftX - containerRect.left;
+                let newTop = pageY - shiftY - containerRect.top;
+
+                // Ensure the element stays within the container
+                if (newLeft < 0) newLeft = 0;
+                if (newTop < 0) newTop = 0;
+                if (newLeft + elementRect.width > containerRect.width) newLeft = containerRect.width - elementRect.width;
+                if (newTop + elementRect.height > containerRect.height) newTop = containerRect.height - elementRect.height;
+
+                element.style.left = newLeft + 'px';
+                element.style.top = newTop + 'px';
+            }
+
+            function onMouseMove(event) {
+                moveAt(event.pageX, event.pageY);
+            }
+
+            document.addEventListener('mousemove', onMouseMove);
+
+            element.onmouseup = function() {
+                document.removeEventListener('mousemove', onMouseMove);
+                element.onmouseup = null;
+            };
+        }
+
+        function generateMeme() {
+            const textAreas = [];
+            const memeContainer = document.getElementById('meme-container');
+            const errorMessage = document.getElementById('error-message');
+            errorMessage.textContent = ''; // Clear previous error message
+
+            const textAreaDivs = memeContainer.getElementsByClassName('text-area');
+            for (let i = 0; i < textAreaDivs.length; i++) {
+                const textAreaDiv = textAreaDivs[i];
+                const textDiv = textAreaDiv.querySelector('div[contenteditable="true"]');
+                const text = textDiv.innerText;
+                const x = parseInt(textAreaDiv.style.left);
+                const y = parseInt(textAreaDiv.style.top);
+                const color = textAreaDiv.style.color;
+                const fontSize = textAreaDiv.style.fontSize;
+
+                textAreas.push({
+                    text: text,
+                    x: x,
+                    y: y,
+                    color: color,
+                    fontSize: fontSize
+                });
+            }
+
+            if (!selectedImage) {
+                alert('Please select an image');
+                return;
+            }
+
+            console.log('Sending request to generate meme with data:', { filename: selectedImage, text_areas: textAreas });
+
+            fetch('http://localhost:5000/generate_meme', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ filename: selectedImage, text_areas: textAreas })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(error => { throw new Error(error.error); });
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                const img = document.getElementById('meme');
+                img.src = URL.createObjectURL(blob);
+                img.style.display = 'block';
+            })
+            .catch(error => {
+                errorMessage.textContent = error.message;
+                console.error('Error:', error);
+            });
+        }
+
+        function downloadMeme() {
+            const img = document.getElementById('meme');
+            if (img.src) {
+                const link = document.createElement('a');
+                link.href = img.src;
+                link.download = 'meme.png';
+                link.click();
+            } else {
+                alert('Please generate a meme first');
+            }
+        }
+    </script>
+</body>
+</html>
